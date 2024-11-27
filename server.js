@@ -1,10 +1,13 @@
 require('dotenv').config();
 const WebSocket = require('ws');
 const winston = require('winston');
+const express = require('express');
 require('winston-daily-rotate-file');
 
 const WEIGHT_SERVICES = process.env.WEIGHT_SERVICES.split(',');
 const PORT = process.env.PORT || 3000;
+const ENABLE_HTTP_SERVER = process.env.ENABLE_HTTP_SERVER === 'true';
+const HTTP_PORT = process.env.HTTP_PORT || 4000;
 
 const LOG_LEVEL = process.env.LOG_LEVEL || 'info';
 const LOG_PATH = process.env.LOG_PATH || 'logs/';
@@ -133,3 +136,36 @@ WEIGHT_SERVICES.forEach((url, index) => {
 
   connect();
 });
+
+// Проверка и запуск HTTP-сервера
+if (ENABLE_HTTP_SERVER) {
+  const app = express();
+
+  // Подключение JSON-парсера
+  app.use(express.json());
+
+  // Маршрут для получения данных
+  app.post('/weight', (req, res) => {
+    const { path } = req.body;
+    if (!path) {
+      logger.warn('В BODY HTTP запроса не указан путь до целевых весов');
+      return res.status(400).json({ error: 'Не указан путь до целевых весов' });
+    }
+
+    let index = WEIGHT_SERVICES.indexOf(path);
+    if (index >= 0) {
+      index++;
+    } else {
+      logger.warn('Весы с указанным путем не зарегистрированы');
+      return res.status(404).json({ error: 'Весы с указанным путем не зарегистрированы' });
+    }
+
+    res.json(weightData[index]);
+  });
+
+  app.listen(HTTP_PORT, () => {
+    logger.info(`HTTP сервер запущен на порту ${HTTP_PORT}`);
+  });
+} else {
+  logger.info('HTTP сервер отключен (ENABLE_HTTP_SERVER=false)');
+}
